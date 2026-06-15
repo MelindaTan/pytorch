@@ -30,14 +30,36 @@ from torch.distributed.flight_recorder.components.utils import (
     check_no_missing_dump_files,
     check_version,
     error_analysis,
+    format_frames, #melinda
     find_coalesced_group as find_coalesced_group_p2p_only,
     find_coalesced_group_with_non_p2p,
+
     get_version_detail,
     just_print_entries,
     match_coalesced_groups as match_coalesced_groups_p2p_only,
     match_coalesced_groups_with_non_p2p,
 )
 
+#melinda
+def _get_traceback_ids(
+      all_entries: dict[int, list[dict[str, Any]]],
+      idx_map: dict[int, int],
+      tracebacks: list[Traceback],
+      seen_frames: dict[str, int],
+  ) -> dict[int, int]:
+      traceback_ids: dict[int, int] = {}
+      for rank, idx in idx_map.items():
+          frames = all_entries[rank][idx].get("frames", [])
+          if frames:
+              key = str(frames)
+              if key not in seen_frames:
+                  seen_frames[key] = len(tracebacks)
+                  tracebacks.append(
+                      Traceback(id=len(tracebacks), frames=format_frames(frames))
+                  )
+              traceback_ids[rank] = seen_frames[key]
+      return traceback_ids
+#
 
 __all__ = [
     "build_groups_memberships",
@@ -175,6 +197,7 @@ def build_collectives(
     }
     """
     tracebacks: list[Traceback] = []
+    seen_frames: dict[str, int] = {}
 
     collectives: list[Collective] = []
     nccl_calls: list[NCCLCall] = []
@@ -296,8 +319,10 @@ def build_collectives(
                 )
             else:
                 mismatch[pg_name] += 1
+            
             for r in all_coalesced_entries:
                 idx_map = {r: i for i, _ in reversed(all_coalesced_entries[r])}  # noqa: B035
+                tb_ids = _get_traceback_ids(all_entries, idx_map, tracebacks, seen_frames) #melinda
                 nccl_calls.extend(
                     reversed(
                         match_record.entry_state.to_nccl_call(
@@ -305,6 +330,7 @@ def build_collectives(
                             idx_map,
                             len(nccl_calls),
                             collectives[-1].id if match else None,
+                            traceback_ids=tb_ids, #melinda
                         )
                     )
                 )
@@ -352,9 +378,11 @@ def build_collectives(
                     r: match_record.found_idx[r] if r != first_rank else 0
                     for r in match_record.found_ranks
                 }
+                tb_ids = _get_traceback_ids(all_entries, idx_map, tracebacks, seen_frames)
                 nccl_calls.extend(
                     match_record.entry_state.to_nccl_call(
-                        all_entries, idx_map, len(nccl_calls), collectives[-1].id
+                        all_entries, idx_map, len(nccl_calls), collectives[-1].id,
+                        traceback_ids=tb_ids, #melinda
                     )
                 )
 
@@ -376,9 +404,11 @@ def build_collectives(
                         all_entries=all_entries,
                     )
                 )
+                tb_ids = _get_traceback_ids(all_entries, idx_map, tracebacks, seen_frames) #melinda
                 nccl_calls.extend(
                     match_record.entry_state.to_nccl_call(
-                        all_entries, idx_map, len(nccl_calls), None
+                        all_entries, idx_map, len(nccl_calls), None, 
+                        traceback_ids=tb_ids, #melinda
                     )
                 )
 
