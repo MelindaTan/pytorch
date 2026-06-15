@@ -22,6 +22,7 @@ from torch.distributed.flight_recorder.components.types import (
     Group,
     Membership,
     NCCLCall,
+    Traceback, #melinda
 )
 
 
@@ -84,6 +85,8 @@ FR_TRACE_TEMPLATE = """
     {{ collectives | safe }}
     <h2>NCCL Calls</h2>
     {{ ncclcalls | safe }}
+    <h2>Tracebacks</h2>
+    {{ tracebacks | safe }}
 {% endblock %}
     """
 
@@ -321,6 +324,7 @@ class FlightRecorderHandler(DebugHandler):
                 db.collectives, headers=Collective._fields, tablefmt="html"
             ),
             ncclcalls=tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="html"),
+            tracebacks=tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="html"), #melinda
         )
 
     def _handle_fr_trace(self, req: HTTPRequestHandler) -> bytes:
@@ -373,6 +377,8 @@ class FlightRecorderHandler(DebugHandler):
                 tabulate(db.collectives, headers=Collective._fields, tablefmt="plain"),
                 "--- NCCL Calls ---",
                 tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="plain"),
+                "--- Tracebacks ---",
+                tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="plain"), #melinda
             ]
         )
 
@@ -405,6 +411,12 @@ class FlightRecorderHandler(DebugHandler):
                         headers=NCCLCall._fields,
                         tablefmt="plain",
                     ),
+                    "--- Tracebacks ---",
+                    tabulate(
+                        nccl_db.tracebacks,
+                        headers=Traceback._fields,
+                        tablefmt="plain",
+                    ), #melinda
                 ]
             )
         except Exception:
@@ -546,6 +558,7 @@ class TorchCommsFlightRecorderHandler(DebugHandler):
                 db.collectives, headers=Collective._fields, tablefmt="html"
             ),
             ncclcalls=tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="html"),
+            tracebacks=tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="html"), #melinda
         )
 
     def dump(self) -> str | None:
@@ -567,6 +580,8 @@ class TorchCommsFlightRecorderHandler(DebugHandler):
                 tabulate(db.collectives, headers=Collective._fields, tablefmt="plain"),
                 "--- NCCL Calls ---",
                 tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="plain"),
+                "--- Tracebacks ---",
+                tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="plain"), #melinda
             ]
         )
         return "\n".join(parts)
