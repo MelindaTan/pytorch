@@ -22,6 +22,7 @@ from torch.distributed.flight_recorder.components.types import (
     Group,
     Membership,
     NCCLCall,
+    Traceback,
 )
 
 
@@ -84,6 +85,8 @@ FR_TRACE_TEMPLATE = """
     {{ collectives | safe }}
     <h2>NCCL Calls</h2>
     {{ ncclcalls | safe }}
+    <h2>Tracebacks</h2>
+    {{ tracebacks | safe }}
 {% endblock %}
     """
 
@@ -321,6 +324,9 @@ class FlightRecorderHandler(DebugHandler):
                 db.collectives, headers=Collective._fields, tablefmt="html"
             ),
             ncclcalls=tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="html"),
+            tracebacks=tabulate(
+                db.tracebacks, headers=Traceback._fields, tablefmt="html"
+            ),
         )
 
     def _handle_fr_trace(self, req: HTTPRequestHandler) -> bytes:
@@ -338,13 +344,15 @@ class FlightRecorderHandler(DebugHandler):
 
     def _handle_fr_trace_nccl(self, req: HTTPRequestHandler) -> bytes:
         addrs, resps = fetch_all(
-            "dump_nccl_trace_json", "onlyactive=true", timeout=self.fetch_timeout
+            "dump_nccl_trace_with_frames",
+            timeout=self.fetch_timeout,  # uses pickle-based dump that includes stack frames
         )
         return self._render_tables(req.frontend, addrs, list(resps))
 
     def _handle_fr_trace_nccl_json(self, req: HTTPRequestHandler) -> bytes:
         addrs, resps = fetch_all(
-            "dump_nccl_trace_json", "onlyactive=true", timeout=self.fetch_timeout
+            "dump_nccl_trace_with_frames",
+            timeout=self.fetch_timeout,  # uses pickle-based dump that includes stack frames
         )
         return req.frontend.render_template(
             "json_resp.html",
@@ -373,12 +381,15 @@ class FlightRecorderHandler(DebugHandler):
                 tabulate(db.collectives, headers=Collective._fields, tablefmt="plain"),
                 "--- NCCL Calls ---",
                 tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="plain"),
+                "--- Tracebacks ---",
+                tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="plain"),
             ]
         )
 
         try:
             nccl_addrs, nccl_resps = fetch_all(
-                "dump_nccl_trace_json", "onlyactive=true", timeout=self.fetch_timeout
+                "dump_nccl_trace_with_frames",
+                timeout=self.fetch_timeout,  # uses pickle-based dump that includes stack frames
             )
             nccl_db = self._build_db(nccl_addrs, nccl_resps)
             parts.extend(
@@ -403,6 +414,12 @@ class FlightRecorderHandler(DebugHandler):
                     tabulate(
                         nccl_db.ncclcalls,
                         headers=NCCLCall._fields,
+                        tablefmt="plain",
+                    ),
+                    "--- Tracebacks ---",
+                    tabulate(
+                        nccl_db.tracebacks,
+                        headers=Traceback._fields,
                         tablefmt="plain",
                     ),
                 ]
@@ -546,6 +563,9 @@ class TorchCommsFlightRecorderHandler(DebugHandler):
                 db.collectives, headers=Collective._fields, tablefmt="html"
             ),
             ncclcalls=tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="html"),
+            tracebacks=tabulate(
+                db.tracebacks, headers=Traceback._fields, tablefmt="html"
+            ),
         )
 
     def dump(self) -> str | None:
@@ -567,6 +587,8 @@ class TorchCommsFlightRecorderHandler(DebugHandler):
                 tabulate(db.collectives, headers=Collective._fields, tablefmt="plain"),
                 "--- NCCL Calls ---",
                 tabulate(db.ncclcalls, headers=NCCLCall._fields, tablefmt="plain"),
+                "--- Tracebacks ---",
+                tabulate(db.tracebacks, headers=Traceback._fields, tablefmt="plain"),
             ]
         )
         return "\n".join(parts)
