@@ -222,6 +222,11 @@ class TORCH_API Backend : public torch::CustomClassHolder {
 
   // Abort Hook API
   //
+  // Called by ProcessGroup::setBackend after the backend is attached,
+  // giving the backend a chance to register pre/post hooks on the PG.
+  // Default is a no-op; ProcessGroupNCCL overrides to register FlightRecorderHook.
+  virtual void registerHooksWithPG(class ProcessGroup* /*pg*/) {}
+
   // Abort hooks are invoked before the backend aborts on a timeout or error,
   // letting users capture debug information. Hooks are keyed by an opaque
   // hook_id so they can be individually unregistered.

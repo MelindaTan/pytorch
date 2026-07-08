@@ -30,6 +30,7 @@
 #include <torch/csrc/distributed/c10d/NanCheck.hpp>
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/PrefixStore.hpp>
+#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/TraceUtils.h>
 #include <torch/csrc/distributed/c10d/Utils.hpp>
@@ -1025,6 +1026,18 @@ ProcessGroupNCCL::ProcessGroupNCCL(
   }
 
   init();
+
+  // Create FlightRecorderHook for tracing collectives.
+  // Hook registration happens later in registerHooksWithPG(), called by
+  // ProcessGroup::setBackend after this backend is attached.
+  fr_hook_ = std::make_unique<FlightRecorderHook>(
+      this,
+      reinterpret_cast<size_t>(this),
+      options_->group_name,
+      getBackendName(),
+      options_->timeout,
+      pgStatus_);
+
   const std::string OFF = "OFF";
   std::string torch_distributed_debug =
       getCvarString({"TORCH_DISTRIBUTED_DEBUG"}, OFF.c_str());
@@ -1065,6 +1078,20 @@ ProcessGroupNCCL::ProcessGroupNCCL(
     // This call is idempotent.
     attachAllocatorHooks();
   }
+}
+
+// Cargo-culted from torchcomms FlightRecorder.cpp:990-1001
+// Register FlightRecorderHook with the ProcessGroup after backend attachment.
+void ProcessGroupNCCL::registerHooksWithPG(ProcessGroup* pg) {
+  if (!fr_hook_) {
+    return;
+  }
+  pg->registerPreHook(
+      fr_hook_->getPreHookId(),
+      [this](const PreHookArgs& args) { fr_hook_->onPreHook(args); });
+  pg->registerPostHook(
+      fr_hook_->getPostHookId(),
+      [this](const PostHookArgs& args) { fr_hook_->onPostHook(args); });
 }
 
 void ProcessGroupNCCL::eagerConnectSingleDevice(at::Device device) {
