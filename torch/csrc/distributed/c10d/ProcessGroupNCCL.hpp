@@ -27,6 +27,7 @@
 #include <torch/csrc/distributed/c10d/cuda/CUDAEventCache.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 #include <torch/csrc/distributed/c10d/symm_mem/intra_node_comm.hpp>
+#include <torch/csrc/distributed/c10d/FlightRecorderHook.hpp>
 
 #include <ATen/DynamicLibrary.h>
 #include <ATen/cuda/CUDAContext.h>
@@ -794,6 +795,10 @@ class TORCH_API ProcessGroupNCCL : public Backend {
     return std::string(NCCL_BACKEND_NAME);
   }
 
+  // Register FlightRecorderHook with the ProcessGroup that owns this backend.
+  // Called by ProcessGroup::setBackend after attachment.
+  void registerHooksWithPG(ProcessGroup* pg) override;
+
   bool supportsSplitting() const override {
     return true;
   }
@@ -1493,6 +1498,9 @@ class TORCH_API ProcessGroupNCCL : public Backend {
 
   // Communication-optimized memory pool associated with this PG
   std::unique_ptr<at::cuda::MemPool> memPool_ = nullptr;
+
+  // FlightRecorder hook for tracing collectives via pre/post hooks
+  std::unique_ptr<FlightRecorderHook> fr_hook_;
 };
 
 // Reset the flighrecorder recordings for the current rank.

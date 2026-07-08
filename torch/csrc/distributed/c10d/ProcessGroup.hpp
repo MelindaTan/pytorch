@@ -923,6 +923,7 @@ class TORCH_API ProcessGroup : public torch::CustomClassHolder {
         deviceTypeToBackend_[deviceType] = backend.value();
         backendTypeToBackend_[backendType] = backend.value();
         (*backend)->setBoundDeviceId(bound_device_id_);
+        (*backend)->registerHooksWithPG(this);
       }
     }
   }

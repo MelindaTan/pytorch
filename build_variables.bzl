@@ -772,6 +772,7 @@ libtorch_cuda_distributed_base_sources = [
 # These files are only supported on Linux (and others) but not on Windows.
 libtorch_cuda_distributed_extra_sources = [
     "torch/csrc/distributed/c10d/FlightRecorderCuda.cpp",
+    "torch/csrc/distributed/c10d/FlightRecorderHook.cpp",
     "torch/csrc/distributed/c10d/NCCLUtils.cpp",
     "torch/csrc/distributed/c10d/NanCheck.cu",
     "torch/csrc/distributed/c10d/gloo/ProcessGroupGlooCuda.cpp",
