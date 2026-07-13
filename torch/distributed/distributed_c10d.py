@@ -2462,8 +2462,11 @@ def _new_process_group_helper(
             )
             recorder = FlightRecorderHook(max_entries=int(buffer_size))
             recorder.register_with_comm(comm)
-            # Keep a reference so the comm outlives this function scope.
+            # Keep a reference so the comm and recorder outlive this function scope.
             _world.comms.append(comm)
+            if not hasattr(_world, "recorders"):
+                _world.recorders = []
+            _world.recorders.append(recorder)
             group_name = GroupName(group_name)
             backend_class = _BackendWrapper(comm)
             # Use the underlying backend's BackendType so distinct torchcomms

@@ -91,8 +91,8 @@ void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
 
   if (device.type() == c10::DeviceType::CUDA) {
     try {
-      auto start_event = std::make_unique<at::cuda::CUDAEvent>();
-      auto end_event = std::make_unique<at::cuda::CUDAEvent>();
+      auto start_event = std::make_unique<at::cuda::CUDAEvent>(cudaEventDefault);
+      auto end_event = std::make_unique<at::cuda::CUDAEvent>(cudaEventDefault);
 
       start_event->record(at::cuda::getCurrentCUDAStream(device.index()));
 

@@ -3510,22 +3510,23 @@ c10::intrusive_ptr<ProcessGroupNCCL::WorkNCCL> ProcessGroupNCCL::initWork(
     //   these objects to the Work because it has implications for keeping those
     //   tensors alive longer and adds overhead when copying Work objects
     //   between threads
-    auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle ? profilingTitle : "",
-        inputs,
-        outputs,
-        r->ncclStartEvent_.get(),
-        r->ncclEndEvent_.get(),
-        options_->timeout,
-        pgStatus_,
-        isP2P);
-    r->trace_id_ = traceId.id;
-    r->trace_reset_epoch_ = traceId.reset_epoch;
+    // Commented out: now handled by FlightRecorderHook via pre/post hooks
+    // auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
+    //     local_id_,
+    //     std::make_tuple(pg_uid_, pg_desc_),
+    //     seqCollective_,
+    //     seqP2P_,
+    //     op_id_,
+    //     profilingTitle ? profilingTitle : "",
+    //     inputs,
+    //     outputs,
+    //     r->ncclStartEvent_.get(),
+    //     r->ncclEndEvent_.get(),
+    //     options_->timeout,
+    //     pgStatus_,
+    //     isP2P);
+    // r->trace_id_ = traceId.id;
+    // r->trace_reset_epoch_ = traceId.reset_epoch;
   }
   return r;
 }
@@ -3829,20 +3830,21 @@ c10::intrusive_ptr<Work> ProcessGroupNCCL::collective(
     // later in endCoalescing we record a 'coalesced' Work which has
     // timing/state updates via watchdog thread, but lacks op metadata such as
     // input/output sizes and profilingTitle per-op in the group.
-    FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle,
-        inputs,
-        outputs,
-        nullptr,
-        nullptr,
-        options_->timeout,
-        pgStatus_,
-        /*isP2P=*/false);
+    // Commented out: now handled by FlightRecorderHook via pre/post hooks
+    // FlightRecorderCUDA::get()->recordWithResetEnabled(
+    //     local_id_,
+    //     std::make_tuple(pg_uid_, pg_desc_),
+    //     seqCollective_,
+    //     seqP2P_,
+    //     op_id_,
+    //     profilingTitle,
+    //     inputs,
+    //     outputs,
+    //     nullptr,
+    //     nullptr,
+    //     options_->timeout,
+    //     pgStatus_,
+    //     /*isP2P=*/false);
   }
 
   // Store references to outputs to be used by WorkNCCL::result and operator<<.
@@ -4310,22 +4312,23 @@ c10::intrusive_ptr<Work> ProcessGroupNCCL::pointToPoint(
     // TODO(whc) because we don't pass output {tensor} to initWork, we tell
     // initWork to not record, and then we manually call record passing all the
     // information it wants.
-    auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle,
-        {tensor},
-        {tensor},
-        work->ncclStartEvent_.get(),
-        work->ncclEndEvent_.get(),
-        options_->timeout,
-        pgStatus_,
-        /*isP2P=*/true);
-    work->trace_id_ = traceId.id;
-    work->trace_reset_epoch_ = traceId.reset_epoch;
+    // Commented out: now handled by FlightRecorderHook via pre/post hooks
+    // auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
+    //     local_id_,
+    //     std::make_tuple(pg_uid_, pg_desc_),
+    //     seqCollective_,
+    //     seqP2P_,
+    //     op_id_,
+    //     profilingTitle,
+    //     {tensor},
+    //     {tensor},
+    //     work->ncclStartEvent_.get(),
+    //     work->ncclEndEvent_.get(),
+    //     options_->timeout,
+    //     pgStatus_,
+    //     /*isP2P=*/true);
+    // work->trace_id_ = traceId.id;
+    // work->trace_reset_epoch_ = traceId.reset_epoch;
   }
 
   // Only check for NaN for send ops, for recv ops `tensor` can be a random
