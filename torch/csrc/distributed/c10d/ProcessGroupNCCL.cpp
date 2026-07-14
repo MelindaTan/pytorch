@@ -1027,12 +1027,8 @@ ProcessGroupNCCL::ProcessGroupNCCL(
 
   init();
 
-  // Create FlightRecorderHook for tracing collectives.
-  // Hook registration happens later in registerHooksWithPG(), called by
-  // ProcessGroup::setBackend after this backend is attached.
   fr_hook_ = std::make_unique<FlightRecorderHook>(
       this,
-      reinterpret_cast<size_t>(this),
       options_->group_name,
       getBackendName(),
       options_->timeout,
@@ -1080,8 +1076,6 @@ ProcessGroupNCCL::ProcessGroupNCCL(
   }
 }
 
-// Cargo-culted from torchcomms FlightRecorder.cpp:990-1001
-// Register FlightRecorderHook with the ProcessGroup after backend attachment.
 void ProcessGroupNCCL::registerHooksWithPG(ProcessGroup* pg) {
   if (!fr_hook_) {
     return;

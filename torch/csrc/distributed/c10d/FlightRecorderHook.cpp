@@ -1,5 +1,3 @@
-// Cargo culted from torchcomms/comms/torchcomms/hooks/fr/FlightRecorder
-// Adapted for c10d's hook system and flat PreHookArgs/PostHookArgs.
 
 #include <torch/csrc/distributed/c10d/FlightRecorderHook.hpp>
 #include <torch/csrc/distributed/c10d/FlightRecorderDetail.hpp>
@@ -12,16 +10,20 @@ namespace c10d {
 namespace {
 
 std::atomic<int64_t> g_hook_id_counter{1};
+std::atomic<size_t> g_pg_id_counter{0};
 
 int64_t nextHookId() {
   return g_hook_id_counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+size_t nextPgId() {
+  return g_pg_id_counter.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace
 
 FlightRecorderHook::FlightRecorderHook(
     Backend* pg,
-    size_t pg_id,
     const std::string& pg_name,
     const std::string& pg_desc,
     std::chrono::milliseconds timeout,
@@ -30,7 +32,7 @@ FlightRecorderHook::FlightRecorderHook(
       pg_(pg),
       pre_hook_id_(nextHookId()),
       post_hook_id_(nextHookId()),
-      pg_id_(pg_id),
+      pg_id_(nextPgId()),
       pg_name_(pg_name),
       pg_desc_(pg_desc),
       timeout_(timeout),
@@ -61,10 +63,6 @@ std::string FlightRecorderHook::hookOpNameToString(HookOpName name) {
   }
 }
 
-// Figure out which GPU this collective runs on
-// 1. Check input tensors --> if exist, use first tensor's device
-// 2. Check output tensors --> if exist, use first outputs's device
-// 3. Fallback to CPU device (no GPU)
 c10::Device FlightRecorderHook::getDeviceFromArgs(const PreHookArgs& args) {
   if (!args.input_tensors.empty()) {
     return args.input_tensors[0].device();
@@ -75,17 +73,10 @@ c10::Device FlightRecorderHook::getDeviceFromArgs(const PreHookArgs& args) {
   return c10::Device(c10::DeviceType::CPU, 0);
 }
 
-// Was: separate P2P tracking (c10d-specific, not in torchcomms)
-// bool FlightRecorderHook::isP2POperation(HookOpName name) {
-//   return name == HookOpName::SEND || name == HookOpName::RECV;
-// }
-
-// Cargo-culted from torchcomms FlightRecorder.cpp:1030-1134
 void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
   c10::Device device = getDeviceFromArgs(args);
   std::string profiling_name = pg_desc_ + ":" + hookOpNameToString(args.name);
 
-  // Create CUDA events for GPU timing (torchcomms:1104-1120)
   at::cuda::CUDAEvent* start_event_ptr = nullptr;
   at::cuda::CUDAEvent* end_event_ptr = nullptr;
 
@@ -99,7 +90,6 @@ void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
       start_event_ptr = start_event.get();
       end_event_ptr = end_event.get();
 
-      // Store events so they outlive this function (recorder stores raw ptrs)
       {
         std::lock_guard<std::mutex> lock(events_mutex_);
         pending_events_[args.op_id] = EventPair{
@@ -116,19 +106,12 @@ void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
   }
 
   size_t collective_seq = collective_seq_id_.fetch_add(1, std::memory_order_relaxed);
-  // Was: separate P2P sequence tracking (c10d-specific, not in torchcomms)
-  // size_t p2p_seq = isP2POperation(args.name)
-  //     ? p2p_seq_id_.fetch_add(1, std::memory_order_relaxed)
-  //     : 0;
-  // bool is_p2p = isP2POperation(args.name);
 
-  // Call recorder (torchcomms:1122-1133)
-  // p2p_seq_id hardcoded to 0 and isP2P to false, matching torchcomms
   auto fr_id = recorder_->recordWithResetEnabled(
       pg_id_,
       std::make_tuple(pg_name_, pg_desc_),
       collective_seq,
-      0,                                    // was: p2p_seq
+      0,
       static_cast<size_t>(args.op_id),
       std::move(profiling_name),
       args.input_tensors,
@@ -137,20 +120,15 @@ void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
       end_event_ptr,
       timeout_,
       pg_status_,
-      false                                 // was: is_p2p
-  );
+      false);
 
-  // Store op_id -> (fr_id, reset_epoch) for retirement
   if (fr_id.id.has_value() && fr_id.reset_epoch.has_value()) {
     std::lock_guard<std::mutex> lock(events_mutex_);
     op_id_to_fr_id_[args.op_id] = std::make_pair(*fr_id.id, *fr_id.reset_epoch);
   }
 }
 
-// Cargo-culted from torchcomms:1136-1156
-// c10d hooks fire on issue, not completion, so we add callback for async ops
 void FlightRecorderHook::onPostHook(const PostHookArgs& args) {
-  // Get the device stored by onPreHook (not hardcoded to cuda:0)
   c10::Device device(c10::DeviceType::CPU, 0);
   {
     std::lock_guard<std::mutex> lock(events_mutex_);
@@ -173,10 +151,9 @@ void FlightRecorderHook::onPostHook(const PostHookArgs& args) {
   }
 }
 
-// Cargo culted from torchcomms
-// Move-out-of-map pattern prevents use-after-free when circular buffer wraps
+// Move events out of maps under lock before recording -- prevents
+// use-after-free when the circular buffer wraps.
 void FlightRecorderHook::retireEntry(int64_t op_id, c10::Device device) {
-  // Move EventPair out of map BEFORE unlocking (torchcomms:420-428)
   EventPair events;
   std::optional<size_t> fr_id;
   std::optional<size_t> reset_epoch;
@@ -198,7 +175,6 @@ void FlightRecorderHook::retireEntry(int64_t op_id, c10::Device device) {
     }
   }
 
-  // Record end event without holding lock (CUDA APIs can hang)
   if (events.end && device.type() == c10::DeviceType::CUDA) {
     try {
       events.end->record(at::cuda::getCurrentCUDAStream(device.index()));
