@@ -291,8 +291,7 @@ void FlightRecorder<EventType>::retire_id(
       startEvent = entry->start_;
       endEvent = entry->end_;
 
-      // CPU wall-clock fallback when CUDA events not yet observed as completed.
-      // Cargo-culted from torchcomms FlightRecorder.cpp:487-491
+      // CPU wall-clock fallback when CUDA events are not yet queryable.
       if (!can_compute_duration) {
         auto now = c10::getTime();
         entry->duration_ =
