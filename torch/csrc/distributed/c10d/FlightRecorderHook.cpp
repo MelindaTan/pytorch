@@ -73,6 +73,7 @@ c10::Device FlightRecorderHook::getDeviceFromArgs(const PreHookArgs& args) {
   return c10::Device(c10::DeviceType::CPU, 0);
 }
 
+// Records the collective to the flight recorder and creates CUDA timing events.
 void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
   c10::Device device = getDeviceFromArgs(args);
   std::string profiling_name = pg_desc_ + ":" + hookOpNameToString(args.name);
@@ -128,6 +129,8 @@ void FlightRecorderHook::onPreHook(const PreHookArgs& args) {
   }
 }
 
+// Schedules retirement: async ops retire via work callback, sync ops retire
+// immediately.
 void FlightRecorderHook::onPostHook(const PostHookArgs& args) {
   c10::Device device(c10::DeviceType::CPU, 0);
   {
