@@ -188,6 +188,7 @@ if is_available():
         _time_estimator,
         get_node_local_rank,
     )
+    from .nan_check_hook import NanCheckHook
     from .remote_device import _remote_device
     from .rendezvous import (
         _create_store_from_options,
