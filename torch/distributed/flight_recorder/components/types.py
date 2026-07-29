@@ -385,6 +385,7 @@ class EntryState:
         idx_map: dict[int, int],
         nccl_call_id: int,
         collective_id: Any,
+        traceback_ids: dict[int, int] | None = None,
     ) -> list[NCCLCall]:
         result = []
         for i, k in idx_map.items():
@@ -395,7 +396,7 @@ class EntryState:
                     collective_id=collective_id,
                     group_id=self.pg_name,  # type: ignore[arg-type]
                     global_rank=i,
-                    traceback_id=0,  # type: ignore[arg-type]
+                    traceback_id=traceback_ids.get(i, 0) if traceback_ids else 0,  # type: ignore[arg-type]
                     collective_type=self.profiling_name,
                     sizes=self.input_sizes,
                 )

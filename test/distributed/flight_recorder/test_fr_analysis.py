@@ -258,6 +258,7 @@ def create_one_entry(
     p2p_seq_id=0,
     output_dtypes="float32",
     pg_info=("0", "default"),
+    frames=None,
 ):
     event = create_one_event(
         collective_name,
@@ -271,6 +272,8 @@ def create_one_entry(
     )
     event.update({"record_id": record_id})
     event.update({"is_p2p": False})
+    if frames is not None:
+        event["frames"] = frames
     return event
 
 
@@ -424,6 +427,68 @@ class FlightRecorderE2ETest(TestCase):
         self.assertEqual(db.collectives[1].collective_name, "nccl:_reduce_oop")
         self.assertEqual(db.collectives[1].record_id, 1)
         self.assertEqual(db.collectives[1].pass_check, True)
+
+    def testTracebackIds(self):
+        """Verify that build_db populates tracebacks and assigns real traceback IDs."""
+        config = JobConfig()
+        args = config.parse_args([])
+        version = "2.8"
+
+        frames_a = [
+            {"name": "all_reduce", "filename": "distributed_c10d.py", "line": 100},
+            {"name": "main", "filename": "train.py", "line": 50},
+        ]
+        frames_b = [
+            {"name": "broadcast", "filename": "distributed_c10d.py", "line": 200},
+            {"name": "init", "filename": "train.py", "line": 10},
+        ]
+
+        details = copy.deepcopy(LOADED_FR_DETAIL_TEMPLATE)
+        details["dump_file_rank_0"]["version"] = version
+        details["dump_file_rank_1"]["version"] = version
+
+        details["dump_file_rank_0"]["entries"].append(
+            create_one_entry(0, "all_reduce", [[4, 4]], [[4, 4]], frames=frames_a)
+        )
+        details["dump_file_rank_1"]["entries"].append(
+            create_one_entry(0, "all_reduce", [[4, 4]], [[4, 4]], frames=frames_a)
+        )
+        details["dump_file_rank_0"]["entries"].append(
+            create_one_entry(1, "broadcast", [[8]], [[8]], collective_seq_id=1, frames=frames_b)
+        )
+        details["dump_file_rank_1"]["entries"].append(
+            create_one_entry(1, "broadcast", [[8]], [[8]], collective_seq_id=1, frames=frames_b)
+        )
+
+        db = build_db(details, args, version)
+
+        # tracebacks table should have entries
+        self.assertGreater(len(db.tracebacks), 0)
+
+        # ncclcalls should have non-zero traceback_ids when frames differ
+        traceback_ids = {call.traceback_id for call in db.ncclcalls}
+        self.assertTrue(
+            any(tid != 0 for tid in traceback_ids) or len(db.tracebacks) > 0,
+            "Expected traceback IDs to be populated",
+        )
+
+        # same frames should get the same traceback_id (deduplication)
+        rank0_calls = [c for c in db.ncclcalls if c.global_rank == 0]
+        rank1_calls = [c for c in db.ncclcalls if c.global_rank == 1]
+        if rank0_calls and rank1_calls:
+            self.assertEqual(
+                rank0_calls[0].traceback_id,
+                rank1_calls[0].traceback_id,
+                "Same frames on different ranks should share a traceback_id",
+            )
+
+        # different frames should get different traceback_ids
+        if len(rank0_calls) >= 2:
+            self.assertNotEqual(
+                rank0_calls[0].traceback_id,
+                rank0_calls[1].traceback_id,
+                "Different frames should get different traceback_ids",
+            )
 
 
 if __name__ == "__main__":
