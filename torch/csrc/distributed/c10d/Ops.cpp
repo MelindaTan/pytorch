@@ -155,7 +155,7 @@ IMPL_RECV_ANY_SOURCE(PrivateUse1)
       int64_t timeout) {                                        \
     auto tensor_vec = tensors.vec();                            \
     auto hook_op_id = process_group->firePreHook(               \
-        HookOpName::REDUCE, asyncOp, root_rank, tensor_vec);    \
+        HookOpName::REDUCE, asyncOp, root_rank, tensor_vec, tensor_vec); \
     auto work = process_group->getBackend(c10::DeviceType::DEV) \
                     ->reduce(                                   \
                         tensor_vec,                             \
@@ -185,7 +185,7 @@ IMPL_REDUCE(PrivateUse1)
           int64_t timeout) {                                              \
     auto tensor_vec = tensors.vec();                                      \
     auto hook_op_id = process_group->firePreHook(                         \
-        HookOpName::BROADCAST, asyncOp, root_rank, tensor_vec);           \
+        HookOpName::BROADCAST, asyncOp, root_rank, tensor_vec, tensor_vec); \
     auto work = process_group->getBackend(c10::DeviceType::DEV)           \
                     ->broadcast(                                          \
                         tensor_vec,                                       \
@@ -218,7 +218,7 @@ IMPL_BROADCAST(PrivateUse1)
           int64_t timeout) {                                              \
     auto tensor_vec = tensors.vec();                                      \
     auto hook_op_id = process_group->firePreHook(                         \
-        HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec);                  \
+        HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec, tensor_vec);      \
     auto work = process_group->getBackend(c10::DeviceType::DEV)           \
                     ->allreduce(                                          \
                         tensor_vec,                                       \
@@ -249,7 +249,7 @@ IMPL_ALLREDUCE(PrivateUse1)
     opts.timeout = std::chrono::milliseconds(timeout);            \
     opts.asyncOp = asyncOp;                                       \
     auto hook_op_id = process_group->firePreHook(                 \
-        HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec);          \
+        HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec, tensor_vec); \
     auto work = process_group->getBackend(c10::DeviceType::DEV)   \
                     ->allreduce_coalesced(tensor_vec, opts);      \
     process_group->firePostHook(                                  \
@@ -668,7 +668,7 @@ allreduce_sparse_cuda_(
     int64_t timeout) {
   auto tensor_vec = tensors.vec();
   auto hook_op_id = process_group->firePreHook(
-      HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec);
+      HookOpName::ALLREDUCE, asyncOp, -1, tensor_vec, tensor_vec);
   auto work = process_group->getBackend(c10::DeviceType::CUDA)
                   ->allreduce_sparse(
                       tensor_vec,
