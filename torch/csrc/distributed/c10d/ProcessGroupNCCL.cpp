@@ -30,6 +30,7 @@
 #include <torch/csrc/distributed/c10d/NanCheck.hpp>
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/PrefixStore.hpp>
+#include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
 #include <torch/csrc/distributed/c10d/TraceUtils.h>
 #include <torch/csrc/distributed/c10d/Utils.hpp>
@@ -1025,6 +1026,14 @@ ProcessGroupNCCL::ProcessGroupNCCL(
   }
 
   init();
+
+  fr_hook_ = std::make_unique<FlightRecorderHook>(
+      this,
+      options_->group_name,
+      getBackendName(),
+      options_->timeout,
+      pgStatus_);
+
   const std::string OFF = "OFF";
   std::string torch_distributed_debug =
       getCvarString({"TORCH_DISTRIBUTED_DEBUG"}, OFF.c_str());
@@ -1065,6 +1074,18 @@ ProcessGroupNCCL::ProcessGroupNCCL(
     // This call is idempotent.
     attachAllocatorHooks();
   }
+}
+
+void ProcessGroupNCCL::registerHooksWithPG(ProcessGroup* pg) {
+  if (!fr_hook_) {
+    return;
+  }
+  pg->registerPreHook(
+      fr_hook_->getPreHookId(),
+      [this](const PreHookArgs& args) { fr_hook_->onPreHook(args); });
+  pg->registerPostHook(
+      fr_hook_->getPostHookId(),
+      [this](const PostHookArgs& args) { fr_hook_->onPostHook(args); });
 }
 
 void ProcessGroupNCCL::eagerConnectSingleDevice(at::Device device) {
@@ -3477,22 +3498,7 @@ c10::intrusive_ptr<ProcessGroupNCCL::WorkNCCL> ProcessGroupNCCL::initWork(
     //   these objects to the Work because it has implications for keeping those
     //   tensors alive longer and adds overhead when copying Work objects
     //   between threads
-    auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle ? profilingTitle : "",
-        inputs,
-        outputs,
-        r->ncclStartEvent_.get(),
-        r->ncclEndEvent_.get(),
-        options_->timeout,
-        pgStatus_,
-        isP2P);
-    r->trace_id_ = traceId.id;
-    r->trace_reset_epoch_ = traceId.reset_epoch;
+    // Flight recorder tracing is now handled by FlightRecorderHook.
   }
   return r;
 }
@@ -3791,25 +3797,8 @@ c10::intrusive_ptr<Work> ProcessGroupNCCL::collective(
   auto work = initWork(
       device, rank_, opType, false, profilingTitle, inputs, outputs, enqueue);
   if (coalescing_state_) {
-    // When coalescing, we record events per op that lack timing/state
-    // information because there is no 'work' associated with them, and then
-    // later in endCoalescing we record a 'coalesced' Work which has
-    // timing/state updates via watchdog thread, but lacks op metadata such as
-    // input/output sizes and profilingTitle per-op in the group.
-    FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle,
-        inputs,
-        outputs,
-        nullptr,
-        nullptr,
-        options_->timeout,
-        pgStatus_,
-        /*isP2P=*/false);
+    // Flight recorder tracing for coalesced ops is handled by
+    // FlightRecorderHook.
   }
 
   // Store references to outputs to be used by WorkNCCL::result and operator<<.
@@ -4286,25 +4275,7 @@ c10::intrusive_ptr<Work> ProcessGroupNCCL::pointToPoint(
     // output, not sure what
     work->outputs_ = std::make_shared<std::vector<at::Tensor>>();
     work->outputs_->push_back(tensor);
-    // TODO(whc) because we don't pass output {tensor} to initWork, we tell
-    // initWork to not record, and then we manually call record passing all the
-    // information it wants.
-    auto traceId = FlightRecorderCUDA::get()->recordWithResetEnabled(
-        local_id_,
-        std::make_tuple(pg_uid_, pg_desc_),
-        seqCollective_,
-        seqP2P_,
-        op_id_,
-        profilingTitle,
-        {tensor},
-        {tensor},
-        work->ncclStartEvent_.get(),
-        work->ncclEndEvent_.get(),
-        options_->timeout,
-        pgStatus_,
-        /*isP2P=*/true);
-    work->trace_id_ = traceId.id;
-    work->trace_reset_epoch_ = traceId.reset_epoch;
+    // Flight recorder tracing is now handled by FlightRecorderHook.
   }
 
   // Only check for NaN for send ops, for recv ops `tensor` can be a random
