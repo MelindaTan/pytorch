@@ -112,6 +112,37 @@ class AbstractNanCheckHookTest:
         dist.all_reduce(t)
         hook.remove()
 
+    def test_check_outputs_true(self):
+        pg = self._init_pg()
+        hook = NanCheckHook(check_inputs=False, check_outputs=True)
+        hook.attach(pg)
+        t = torch.ones(4, device=self.device)
+        dist.all_reduce(t)
+        hook.remove()
+
+    def test_is_attached(self):
+        pg = self._init_pg()
+        hook = NanCheckHook()
+        self.assertFalse(hook.is_attached)
+        hook.attach(pg)
+        self.assertTrue(hook.is_attached)
+        hook.remove()
+        self.assertFalse(hook.is_attached)
+
+    def test_duplicate_attach_raises(self):
+        pg = self._init_pg()
+        hook = NanCheckHook()
+        hook.attach(pg)
+        with self.assertRaises(RuntimeError, msg="already attached"):
+            hook.attach(pg)
+        hook.remove()
+
+    def test_remove_without_attach_raises(self):
+        self._init_pg()
+        hook = NanCheckHook()
+        with self.assertRaises(RuntimeError, msg="not attached"):
+            hook.remove()
+
     def test_multiple_ops(self):
         pg = self._init_pg()
         hook = NanCheckHook(check_inputs=True)

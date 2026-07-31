@@ -1,15 +1,10 @@
+import itertools
+
 import torch
 from torch._C._distributed_c10d import HookOpName
 
 
-_HOOK_ID_BASE = 0x4E414E43  # 'NANC'
-_next_hook_id = _HOOK_ID_BASE
-
-
-def _get_next_hook_id():
-    global _next_hook_id
-    _next_hook_id += 1
-    return _next_hook_id
+_hook_id_counter = itertools.count(0x4E414E43)  # 'NANC'
 
 
 _OP_NAME_MAP = {
@@ -54,7 +49,7 @@ class NanCheckHook:
         if self._pg is not None:
             raise RuntimeError("NanCheckHook is already attached to a ProcessGroup")
 
-        self._hook_id = _get_next_hook_id()
+        self._hook_id = next(_hook_id_counter)
         self._pg = pg
 
         def _pre_hook(args):
@@ -68,10 +63,11 @@ class NanCheckHook:
         return self
 
     def remove(self):
-        if self._pg is not None:
-            self._pg.unregister_pre_hook(self._hook_id)
-            self._pg = None
-            self._hook_id = None
+        if self._pg is None:
+            raise RuntimeError("NanCheckHook is not attached to a ProcessGroup")
+        self._pg.unregister_pre_hook(self._hook_id)
+        self._pg = None
+        self._hook_id = None
 
     @property
     def is_attached(self):
